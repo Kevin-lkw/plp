@@ -24,7 +24,7 @@ def get_node_name(name, parent_name):
     return True, name[len(parent_name):]
 
 
-model = create_model(config_path='./models/cldm_v15.yaml')
+model = create_model(config_path='./models/cldm_v15.yaml') # return a random initialized ControlLDM model
 
 pretrained_weights = torch.load(input_path)
 if 'state_dict' in pretrained_weights:
@@ -46,5 +46,5 @@ for k in scratch_dict.keys():
         print(f'These weights are newly added: {k}')
 
 model.load_state_dict(target_dict, strict=True)
-torch.save(model.state_dict(), output_path)
+torch.save(model.state_dict(), output_path) # save ControlLDM model with SD weights
 print('Done.')
