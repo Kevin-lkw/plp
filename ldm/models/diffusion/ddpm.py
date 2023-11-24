@@ -588,7 +588,7 @@ class LatentDiffusion(DDPM):
 
     @rank_zero_only
     @torch.no_grad()
-    def on_train_batch_start(self, batch, batch_idx, dataloader_idx):
+    def on_train_batch_start(self, batch, batch_idx):
         # only for very first batch
         if self.scale_by_std and self.current_epoch == 0 and self.global_step == 0 and batch_idx == 0 and not self.restarted_from_ckpt:
             assert self.scale_factor == 1., 'rather not use custom rescaling and std-rescaling simultaneously'
@@ -613,7 +613,7 @@ class LatentDiffusion(DDPM):
             self.make_cond_schedule()
 
     def instantiate_first_stage(self, config):
-        model = instantiate_from_config(config)
+        model = instantiate_from_config(config) # ldm.models.autoencoder.AutoencoderKL
         self.first_stage_model = model.eval()
         self.first_stage_model.train = disabled_train
         for param in self.first_stage_model.parameters():
@@ -629,7 +629,7 @@ class LatentDiffusion(DDPM):
                 self.cond_stage_model = None
                 # self.be_unconditional = True
             else:
-                model = instantiate_from_config(config)
+                model = instantiate_from_config(config) # ldm.modules.encoders.modules.FrozenCLIPEmbedder
                 self.cond_stage_model = model.eval()
                 self.cond_stage_model.train = disabled_train
                 for param in self.cond_stage_model.parameters():
@@ -766,17 +766,17 @@ class LatentDiffusion(DDPM):
     @torch.no_grad()
     def get_input(self, batch, k, return_first_stage_outputs=False, force_c_encode=False,
                   cond_key=None, return_original_cond=False, bs=None, return_x=False):
-        x = super().get_input(batch, k)
-        if bs is not None:
+        x = super().get_input(batch, k) # jpg, b c h w
+        if bs is not None: # False
             x = x[:bs]
         x = x.to(self.device)
         encoder_posterior = self.encode_first_stage(x)
-        z = self.get_first_stage_encoding(encoder_posterior).detach()
+        z = self.get_first_stage_encoding(encoder_posterior).detach() # latent of jpg, b 4 64 64
 
         if self.model.conditioning_key is not None and not self.force_null_conditioning:
             if cond_key is None:
-                cond_key = self.cond_stage_key
-            if cond_key != self.first_stage_key:
+                cond_key = self.cond_stage_key # txt
+            if cond_key != self.first_stage_key: # jpg
                 if cond_key in ['caption', 'coordinates_bbox', "txt"]:
                     xc = batch[cond_key]
                 elif cond_key in ['class_label', 'cls']:
@@ -787,7 +787,7 @@ class LatentDiffusion(DDPM):
                 xc = x
             if not self.cond_stage_trainable or force_c_encode:
                 if isinstance(xc, dict) or isinstance(xc, list):
-                    c = self.get_learned_conditioning(xc)
+                    c = self.get_learned_conditioning(xc) # txt embedding, b len 768
                 else:
                     c = self.get_learned_conditioning(xc.to(self.device))
             else:
@@ -795,7 +795,7 @@ class LatentDiffusion(DDPM):
             if bs is not None:
                 c = c[:bs]
 
-            if self.use_positional_encodings:
+            if self.use_positional_encodings: # False
                 pos_x, pos_y = self.compute_latent_shifts(batch)
                 ckey = __conditioning_keys__[self.model.conditioning_key]
                 c = {ckey: c, 'pos_x': pos_x, 'pos_y': pos_y}
@@ -807,12 +807,12 @@ class LatentDiffusion(DDPM):
                 pos_x, pos_y = self.compute_latent_shifts(batch)
                 c = {'pos_x': pos_x, 'pos_y': pos_y}
         out = [z, c]
-        if return_first_stage_outputs:
+        if return_first_stage_outputs: # False
             xrec = self.decode_first_stage(z)
             out.extend([x, xrec])
-        if return_x:
+        if return_x: # False
             out.extend([x])
-        if return_original_cond:
+        if return_original_cond: # False
             out.append(xc)
         return out
 
@@ -837,10 +837,14 @@ class LatentDiffusion(DDPM):
         return loss
 
     def forward(self, x, c, *args, **kwargs):
-        t = torch.randint(0, self.num_timesteps, (x.shape[0],), device=self.device).long()
-        if self.model.conditioning_key is not None:
+        '''
+        x is x_0
+        c is prompt embedding and hint embedding
+        '''
+        t = torch.randint(0, self.num_timesteps, (x.shape[0],), device=self.device).long() # sample batch_size of t from 0-num_timesteps
+        if self.model.conditioning_key is not None: # crossattn
             assert c is not None
-            if self.cond_stage_trainable:
+            if self.cond_stage_trainable: # False
                 c = self.get_learned_conditioning(c)
             if self.shorten_cond_schedule:  # TODO: drop this option
                 tc = self.cond_ids[t].to(self.device)
@@ -857,7 +861,7 @@ class LatentDiffusion(DDPM):
             key = 'c_concat' if self.model.conditioning_key == 'concat' else 'c_crossattn'
             cond = {key: cond}
 
-        x_recon = self.model(x_noisy, t, **cond)
+        x_recon = self.model(x_noisy, t, **cond)  # eps, using diffusion model in DiffusionWrapper to inference
 
         if isinstance(x_recon, tuple) and not return_ids:
             return x_recon[0]
@@ -883,9 +887,9 @@ class LatentDiffusion(DDPM):
         return mean_flat(kl_prior) / np.log(2.0)
 
     def p_losses(self, x_start, cond, t, noise=None):
-        noise = default(noise, lambda: torch.randn_like(x_start))
-        x_noisy = self.q_sample(x_start=x_start, t=t, noise=noise)
-        model_output = self.apply_model(x_noisy, t, cond)
+        noise = default(noise, lambda: torch.randn_like(x_start)) # b 4 64 64
+        x_noisy = self.q_sample(x_start=x_start, t=t, noise=noise) # sample x_t from x_0 using eps
+        model_output = self.apply_model(x_noisy, t, cond) # eps
 
         loss_dict = {}
         prefix = 'train' if self.training else 'val'
