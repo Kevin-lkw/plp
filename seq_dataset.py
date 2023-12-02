@@ -83,11 +83,11 @@ class Raw_Data5k_Dataset(Dataset):
 
         hint = mask * jpg # 512x512x3
 
-        #     # Normalize source images to [0, 1].
-        #     source = source.astype(np.float32) / 255.0
+        # Normalize hint images to [0, 1].
+        hint = hint.astype(np.float32) / 255.0
 
-        #     # Normalize target images to [-1, 1].
-        #     target = (target.astype(np.float32) / 127.5) - 1.0
+        # Normalize target images to [-1, 1].
+        jpg = (jpg.astype(np.float32) / 127.5) - 1.0
 
         # random pick a caption
         txt_t = np.random.randint(0, len(data['captions']))
@@ -99,6 +99,8 @@ class Raw_Data5k_Dataset(Dataset):
             'hint': hint,
             'mask': mask,
         }
+    
+    ##TODO check dataset img
 
 
 
