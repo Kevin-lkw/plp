@@ -5,6 +5,7 @@ lightning_logs/
 image_log/
 openai/
 test.py
+dataset/
 
 *.pth
 *.pt
