@@ -1,11 +1,18 @@
+import torch
+import pdb
+
 from cldm.cldm import ControlLDM, ControlNet
-from ldm.util import instantiate_from_config
+from ldm.util import instantiate_from_config, default
 from omegaconf import OmegaConf
+
+from ldm.modules.diffusionmodules.util import (
+    timestep_embedding,
+)
 
 
 class SeqControlNet(ControlNet):
     def __init__(self, *args, **kwargs):
-        super.__init__(self, *args, **kwargs)
+        super().__init__(*args, **kwargs)
 
     def forward(self, x, hint, timesteps, context, seq_t, **kwargs):
         t_emb = timestep_embedding(timesteps, self.model_channels, repeat_only=False) # b 320
@@ -40,31 +47,79 @@ class SeqControlNet(ControlNet):
 
 
 class PLPModel(ControlLDM):
-    def __init__(self):
-        config = OmegaConf.load('models/cldm_v15.yaml')
-        config = config.model.params.seq_control_stage_config
-        self.control_model = instantiate_from_config(config)
+    def __init__(self, control_stage_config, control_key, only_mid_control, *args, **kwargs):
+        super().__init__(control_stage_config, control_key, only_mid_control, *args, **kwargs)
+        
+        # self.mask_query = torch.nn.Linear(1,1)
 
     @torch.no_grad()
     def get_input(self, batch, k, bs=None, *args, **kwargs):
         x, c = super().get_input(batch, self.first_stage_key, *args, **kwargs)
         # c is dict with c_crossattn (txt) and c_concat (hint)
+
+        # add seq_t and mask to cond
         c['seq_t'] = batch['seq_t']
+        c['mask'] = batch['mask']
         
         return x, c
+
 
     def apply_model(self, x_noisy, t, cond, *args, **kwargs):
         assert isinstance(cond, dict)
         diffusion_model = self.model.diffusion_model
 
         cond_txt = torch.cat(cond['c_crossattn'], 1)
-        seq_t = cond['seq_t']
+        seq_t = cond['seq_t'] # tensor (b, )
+        mask_t = cond['mask'] # ground truth mask_t, (b, 512, 512, 1)
+
+        mask_pred = None
 
         if cond['c_concat'] is None:
             eps = diffusion_model(x=x_noisy, timesteps=t, context=cond_txt, control=None, only_mid_control=self.only_mid_control)
         else:
             control = self.control_model(x=x_noisy, hint=torch.cat(cond['c_concat'], 1), timesteps=t, context=cond_txt, seq_t=seq_t)
+            pdb.set_trace()
             control = [c * scale for c, scale in zip(control, self.control_scales)]
             eps = diffusion_model(x=x_noisy, timesteps=t, context=cond_txt, control=control, only_mid_control=self.only_mid_control)
+            
+            # mask_pred = self.mask_query(control) # real img-sized mask
 
-        return eps
+        return eps, mask_pred, mask_t
+    
+
+    def p_losses(self, x_start, cond, t, noise=None):
+        noise = default(noise, lambda: torch.randn_like(x_start)) # b 4 64 64
+        x_noisy = self.q_sample(x_start=x_start, t=t, noise=noise) # sample x_t from x_0 using eps
+        model_output, mask_pred = self.apply_model(x_noisy, t, cond) # eps, mask_pred
+
+        loss_dict = {}
+        prefix = 'train' if self.training else 'val'
+
+        if self.parameterization == "x0":
+            target = x_start
+        elif self.parameterization == "eps":
+            target = noise
+        elif self.parameterization == "v":
+            target = self.get_v(x_start, noise, t)
+        else:
+            raise NotImplementedError()
+
+        loss_simple = self.get_loss(model_output, target, mean=False).mean([1, 2, 3])
+        loss_dict.update({f'{prefix}/loss_simple': loss_simple.mean()})
+
+        logvar_t = self.logvar[t].to(self.device)
+        loss = loss_simple / torch.exp(logvar_t) + logvar_t
+        # loss = loss_simple / torch.exp(self.logvar) + self.logvar
+        if self.learn_logvar:
+            loss_dict.update({f'{prefix}/loss_gamma': loss.mean()})
+            loss_dict.update({'logvar': self.logvar.data.mean()})
+
+        loss = self.l_simple_weight * loss.mean()
+
+        loss_vlb = self.get_loss(model_output, target, mean=False).mean(dim=(1, 2, 3))
+        loss_vlb = (self.lvlb_weights[t] * loss_vlb).mean()
+        loss_dict.update({f'{prefix}/loss_vlb': loss_vlb})
+        loss += (self.original_elbo_weight * loss_vlb)
+        loss_dict.update({f'{prefix}/loss': loss})
+
+        return loss, loss_dict
