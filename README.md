@@ -1,3 +1,18 @@
+# PLP
+
+# TODO
+
+* Finetuning
+[Finetuning Guidance](https://civitai.com/articles/2078/play-in-control-controlnet-training-setup-guide)
+
+* Evaluation codes
+
+* Inference codes
+
+* Enlarging dataset
+
+
+
 # News: A nightly version of ControlNet 1.1 is released!
 
 [ControlNet 1.1](https://github.com/lllyasviel/ControlNet-v1-1-nightly) is released. Those new models will be merged to this repo after we make sure that everything is good.
