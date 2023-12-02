@@ -269,7 +269,7 @@ class ResBlock(TimestepBlock):
             h = out_norm(h) * (1 + scale) + shift
             h = out_rest(h)
         else:
-            h = h + emb
+            h = h + emb_out
             h = self.out_layers(h)
         return self.skip_connection(x) + h
 
