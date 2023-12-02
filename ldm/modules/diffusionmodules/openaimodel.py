@@ -269,12 +269,7 @@ class ResBlock(TimestepBlock):
             h = out_norm(h) * (1 + scale) + shift
             h = out_rest(h)
         else:
-            if emb.size(0) == h.size(0): # For fixed stable diffusion
-                h = h + emb
-            else:                        # For control net
-                emb_out_T, emb_in_T = th.chunk(emb_out, 2, dim=0)
-                h = h + emb_out_T + emb_in_T
-            
+            h = h + emb
             h = self.out_layers(h)
         return self.skip_connection(x) + h
 
