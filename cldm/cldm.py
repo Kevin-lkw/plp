@@ -310,7 +310,7 @@ class ControlLDM(LatentDiffusion):
     def __init__(self, control_stage_config, control_key, only_mid_control, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.control_model = instantiate_from_config(control_stage_config)
-        self.control_key = control_key
+        self.control_key = control_key # hint
         self.only_mid_control = only_mid_control
         self.control_scales = [1.0] * 13
 
