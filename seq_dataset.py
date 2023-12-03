@@ -72,7 +72,7 @@ class Raw_Data5k_Dataset(Dataset):
 
         seq_len = data['mask'].shape[0]
         # sample seq_t from [0, seq_len)
-        seq_t = np.random.randint(0, seq_len-1)
+        seq_t = np.random.randint(0, seq_len)
 
         jpg = data['image']
         mask = data['mask'][seq_t]
