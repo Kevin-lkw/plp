@@ -32,9 +32,11 @@ if 'state_dict' in pretrained_weights:
 
 scratch_dict = model.state_dict()
 
+breakpoint()
+
 target_dict = {}
 for k in scratch_dict.keys():
-    is_control, name = get_node_name(k, 'control_')
+    is_control, name = get_node_name(k, 'control_') # is_control=True when k.startswith('control_')=True, name=the rest key
     if is_control:
         copy_k = 'model.diffusion_' + name
     else:
