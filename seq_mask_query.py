@@ -162,24 +162,24 @@ class Mask(nn.Module):
         x,
         t_emb=None
     ):
-        print(x.shape)
+        # print(x.shape)
 
         x = self.conv_in(x)
-        print(x.shape)
+        # print(x.shape)
 
         for block1, block2, attn, up in self.mask_ups:
             x = block1(x, t_emb)
-            print(x.shape)
+            # print(x.shape)
             x = block2(x, t_emb)
-            print(x.shape)
+            # print(x.shape)
             x = attn(x)
             x = up(x)
-            print(x.shape)
+            # print(x.shape)
 
         x = self.conv_out(x)
 
         x = self.act(x)
-        print(x.shape)
+        # print(x.shape)
 
         return x
 
