@@ -1,15 +1,35 @@
 # PLP
 
+# Preparation for training
+
+1、Download SDv1.5 weights ["v1-5-pruned.ckpt"](https://huggingface.co/runwayml/stable-diffusion-v1-5/tree/main) and place it under `./models`.
+
+2、If you have trouble in getting access to huggingfaceHub, download the openai/CLIP model weights manually and place it under `./openai/clip-vit-large-patch14`. The downloading link is [here](https://huggingface.co/openai/clip-vit-large-patch14/tree/main).
+
+3、Download the dataset we use from PKU Drive. Place it under `./dataset`. Then run `python pre_processing/dataset_process.py` to get the preprocessed dataset in `./dataset/raw_data5k/`.
+
+4、Run `python seq_add_control.py ./models/v1-5-pruned.ckpt ./models/plp_ini.ckpt` to get initialized PLP Model from SD weights.
+
+5、Run `python train_plp.py` to start training.
+
+The training logs including inferenced images and loss curves should be in `./image_log` and `./lightning_logs`.
+
 # TODO
 
 * Finetuning
-[Finetuning Guidance](https://civitai.com/articles/2078/play-in-control-controlnet-training-setup-guide)
+    
+    adjust scale of mask_loss
+
+    take different weights with seq_t
+
+[Official Finetuning Guidance](https://civitai.com/articles/2078/play-in-control-controlnet-training-setup-guide)
 
 * Evaluation codes
 
 * Inference codes
 
 * Enlarging dataset
+
 
 
 
