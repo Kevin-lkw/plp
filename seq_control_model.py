@@ -9,6 +9,8 @@ from ldm.modules.diffusionmodules.util import (
     timestep_embedding,
 )
 
+from seq_mask_query import Mask
+
 
 class SeqControlNet(ControlNet):
     def __init__(self, *args, **kwargs):
@@ -50,7 +52,8 @@ class PLPModel(ControlLDM):
     def __init__(self, control_stage_config, control_key, only_mid_control, *args, **kwargs):
         super().__init__(control_stage_config, control_key, only_mid_control, *args, **kwargs)
         
-        # self.mask_query = torch.nn.Linear(1,1)
+        self.mask_query = Mask()
+        self.loss_mask_weights = 1.0
 
     @torch.no_grad()
     def get_input(self, batch, k, bs=None, *args, **kwargs):
@@ -78,19 +81,19 @@ class PLPModel(ControlLDM):
             eps = diffusion_model(x=x_noisy, timesteps=t, context=cond_txt, control=None, only_mid_control=self.only_mid_control)
         else:
             control = self.control_model(x=x_noisy, hint=torch.cat(cond['c_concat'], 1), timesteps=t, context=cond_txt, seq_t=seq_t)
-            pdb.set_trace()
             control = [c * scale for c, scale in zip(control, self.control_scales)]
+            last_hidden_state = control[-1].clone() # (bs, 1280, 8, 8)
             eps = diffusion_model(x=x_noisy, timesteps=t, context=cond_txt, control=control, only_mid_control=self.only_mid_control)
             
-            # mask_pred = self.mask_query(control) # real img-sized mask
+            mask_pred = self.mask_query(last_hidden_state) # real img-sized mask
 
-        return eps, mask_pred, mask_t
+        return eps, mask_pred.squeeze(1), mask_t.squeeze(3)
     
 
     def p_losses(self, x_start, cond, t, noise=None):
         noise = default(noise, lambda: torch.randn_like(x_start)) # b 4 64 64
         x_noisy = self.q_sample(x_start=x_start, t=t, noise=noise) # sample x_t from x_0 using eps
-        model_output, mask_pred = self.apply_model(x_noisy, t, cond) # eps, mask_pred
+        model_output, mask_pred, mask_t = self.apply_model(x_noisy, t, cond) # eps, mask_pred, mask_gt
 
         loss_dict = {}
         prefix = 'train' if self.training else 'val'
@@ -110,7 +113,7 @@ class PLPModel(ControlLDM):
         logvar_t = self.logvar[t].to(self.device)
         loss = loss_simple / torch.exp(logvar_t) + logvar_t
         # loss = loss_simple / torch.exp(self.logvar) + self.logvar
-        if self.learn_logvar:
+        if self.learn_logvar: # False
             loss_dict.update({f'{prefix}/loss_gamma': loss.mean()})
             loss_dict.update({'logvar': self.logvar.data.mean()})
 
@@ -120,6 +123,16 @@ class PLPModel(ControlLDM):
         loss_vlb = (self.lvlb_weights[t] * loss_vlb).mean()
         loss_dict.update({f'{prefix}/loss_vlb': loss_vlb})
         loss += (self.original_elbo_weight * loss_vlb)
+        
+
+        # add mask query loss
+        loss_mask = self.get_loss(mask_pred, mask_t, mean=False).mean([1, 2])
+        loss_mask = (self.loss_mask_weights * loss_mask).mean()
+        loss_dict.update({f'{prefix}/loss_mask': loss_mask})
+        loss += loss_mask
+
+
         loss_dict.update({f'{prefix}/loss': loss})
+
 
         return loss, loss_dict
