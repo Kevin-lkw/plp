@@ -136,3 +136,17 @@ class PLPModel(ControlLDM):
 
 
         return loss, loss_dict
+    
+
+    def configure_optimizers(self):
+        lr = self.learning_rate
+        params = list(self.control_model.parameters())
+        if not self.sd_locked: # sd_locked = True
+            params += list(self.model.diffusion_model.output_blocks.parameters())
+            params += list(self.model.diffusion_model.out.parameters())
+
+        # add mask query params
+        params += list(self.mask_query.parameters())
+
+        opt = torch.optim.AdamW(params, lr=lr)
+        return opt
