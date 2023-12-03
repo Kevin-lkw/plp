@@ -80,6 +80,7 @@ class Raw_Data5k_Dataset(Dataset):
         # resize the jpg and mask to 512x512
         jpg = self.resize_image(jpg) # 512x512x3
         mask = self.resize_image(np.tile(mask, (3, 1, 1)).transpose(1,2,0))[..., [0]] # 512x512
+        mask = mask.astype(np.float32)
 
         hint = mask * jpg # 512x512x3
 
