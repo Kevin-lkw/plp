@@ -7,7 +7,7 @@ openai/
 test.py
 dataset/
 
-
+*.png
 *.out
 *.pth
 *.pt
