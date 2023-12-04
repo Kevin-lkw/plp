@@ -126,7 +126,8 @@ class PLPModel(ControlLDM):
         
 
         # add mask query loss
-        loss_mask = self.get_loss(mask_pred, mask_t, mean=False).mean([1, 2])
+        # loss_mask = self.get_loss(mask_pred, mask_t, mean=False).mean([1, 2])
+        loss_mask = torch.nn.BCELoss(reduction='none')(mask_pred, mask_t).mean([1, 2])
         loss_mask = (self.loss_mask_weights * loss_mask).mean()
         loss_dict.update({f'{prefix}/loss_mask': loss_mask})
         loss += loss_mask
