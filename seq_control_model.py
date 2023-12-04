@@ -53,7 +53,7 @@ class PLPModel(ControlLDM):
         super().__init__(control_stage_config, control_key, only_mid_control, *args, **kwargs)
         
         self.mask_query = Mask()
-        self.loss_mask_weights = 1.0
+        self.loss_mask_weights = 0.1
 
     @torch.no_grad()
     def get_input(self, batch, k, bs=None, *args, **kwargs):
