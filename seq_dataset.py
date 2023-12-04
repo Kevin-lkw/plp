@@ -5,6 +5,7 @@ import pdb
 import pickle as pkl
 import os
 from PIL import Image
+import random
 
 from torch.utils.data import Dataset
 
@@ -21,8 +22,14 @@ class Raw_Data5k_Dataset(Dataset):
         return len(self.data_path_list)
 
 
-    def resize_image(self, image, target_size=(512, 512)):
+    def resize_image(self, image):
         assert image.shape[2] == 3
+
+        H, W, _ = image.shape
+        min_HW = min(H, W)
+
+        target_size = int(H/min_HW * 512), int(W/min_HW * 512)
+        target_size = max(512, target_size[0]), max(512, target_size[1])
 
         # 将NumPy数组转换为PIL图像
         pil_image = Image.fromarray(image.astype('uint8'))
@@ -32,6 +39,8 @@ class Raw_Data5k_Dataset(Dataset):
 
         # 将PIL图像转换回NumPy数组
         resized_np_image = np.array(resized_image)
+
+        assert resized_np_image.shape[0] == 512 or resized_np_image.shape[1] == 512
 
         return resized_np_image
 
@@ -57,6 +66,11 @@ class Raw_Data5k_Dataset(Dataset):
 
     #     return dict(jpg=target, txt=prompt, hint=source)
 
+    def crop_img(self, array, left, top):
+        # 截取512x512的图片区域
+        cropped_array = array[top:top+512, left:left+512, ...]
+        return cropped_array
+
     def __getitem__(self, idx):
         '''
         return a dict with keys: 
@@ -72,14 +86,11 @@ class Raw_Data5k_Dataset(Dataset):
 
         seq_len = data['mask'].shape[0]
         # sample seq_t from [0, seq_len]
-        seq_t = np.random.randint(0, seq_len+1)
+        seq_t = np.random.randint(0, seq_len)
 
         jpg = data['image']
         
-        if seq_t < seq_len:
-            mask = data['mask'][seq_t]
-        else:
-            mask = np.ones_like(data['mask'][0])
+        mask = data['mask'][seq_t]
 
         # resize the jpg and mask to 512x512
         jpg = self.resize_image(jpg) # 512x512x3
@@ -99,6 +110,23 @@ class Raw_Data5k_Dataset(Dataset):
         hint = hint.astype(np.float32) / 255.0
         # Normalize target images to [-1, 1].
         jpg = (jpg.astype(np.float32) / 127.5) - 1.0
+
+
+        # crop the jpg, hint and mask to 512*512
+        # 获取原始图片的宽度和高度
+        height, width, _ = jpg.shape
+
+        # 计算可截取的最大起始位置
+        max_left = width - 512
+        max_top = height - 512
+
+        # 生成随机的截取起始位置
+        left = random.randint(0, max_left)
+        top = random.randint(0, max_top)
+
+        jpg = self.crop_img(jpg, left, top)
+        hint = self.crop_img(hint, left, top)
+        mask = self.crop_img(mask, left, top)
 
         # random pick a caption
         txt_t = np.random.randint(0, len(data['captions']))
