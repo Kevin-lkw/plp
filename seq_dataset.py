@@ -71,22 +71,32 @@ class Raw_Data5k_Dataset(Dataset):
             data = pkl.load(f) # dict, with 'captions', 'image' and 'mask'
 
         seq_len = data['mask'].shape[0]
-        # sample seq_t from [0, seq_len)
-        seq_t = np.random.randint(0, seq_len)
+        # sample seq_t from [0, seq_len]
+        seq_t = np.random.randint(0, seq_len+1)
 
         jpg = data['image']
-        mask = data['mask'][seq_t]
+        
+        if seq_t < seq_len:
+            mask = data['mask'][seq_t]
+        else:
+            mask = np.ones_like(data['mask'][0])
 
         # resize the jpg and mask to 512x512
         jpg = self.resize_image(jpg) # 512x512x3
-        mask = self.resize_image(np.tile(mask, (3, 1, 1)).transpose(1,2,0))[..., [0]] # 512x512
+        mask = self.resize_image(np.tile(mask, (3, 1, 1)).transpose(1,2,0))[..., [0]] # 512x512x1
         mask = mask.astype(np.float32)
 
-        hint = mask * jpg # 512x512x3
+        # compute hint, which is jpg * mask_{t-1}
+        prev_mask = np.zeros_like(data['mask'][0])
+        if seq_t > 0:
+            prev_mask = data['mask'][seq_t-1]
+        prev_mask = self.resize_image(np.tile(prev_mask, (3, 1, 1)).transpose(1,2,0))[..., [0]] # 512x512x1
+        prev_mask = prev_mask.astype(np.float32)
+
+        hint = prev_mask * jpg # 512x512x3
 
         # Normalize hint images to [0, 1].
         hint = hint.astype(np.float32) / 255.0
-
         # Normalize target images to [-1, 1].
         jpg = (jpg.astype(np.float32) / 127.5) - 1.0
 
@@ -101,8 +111,11 @@ class Raw_Data5k_Dataset(Dataset):
             'mask': mask,
         }
     
-    ##TODO check dataset img
-
+    # check dataset img
+    def show_img(self, idx):
+        data = self.__getitem__(idx)
+        
+        ## TODO
 
 
 if __name__ == "__main__":
