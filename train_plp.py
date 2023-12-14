@@ -2,7 +2,7 @@ from share import *
 
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader
-from seq_dataset import Raw_Data5k_Dataset
+from seq_dataset import Raw_Data5k_Dataset, Segment_Hint5k_Dataset
 from cldm.logger import ImageLogger
 from cldm.model import create_model, load_state_dict
 
@@ -27,7 +27,8 @@ model.only_mid_control = only_mid_control
 
 
 # Misc
-dataset = Raw_Data5k_Dataset()
+# dataset = Raw_Data5k_Dataset()
+dataset = Segment_Hint5k_Dataset()
 dataloader = DataLoader(dataset, num_workers=0, batch_size=batch_size, shuffle=True)
 logger = ImageLogger(batch_frequency=logger_freq)
 trainer = pl.Trainer(gpus=1, precision=32, callbacks=[logger])
