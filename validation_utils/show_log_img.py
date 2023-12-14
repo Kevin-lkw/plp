@@ -12,8 +12,11 @@ including text prompt, hint images, ground truth images, sampled images.
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--gs", type=int, required=True, help="global step")
+    args = parser.parse_args()
     image_log_dir = 'image_log/train'
-    global_step = '033701'
+    global_step = args.gs
 
 
     filename_list = os.listdir(image_log_dir)
