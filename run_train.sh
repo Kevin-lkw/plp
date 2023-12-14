@@ -6,6 +6,6 @@
 #SBATCH --gres=gpu:1
 #SBATCH --qos=singlegpu
 #SBATCH --cpus-per-task=10
-#SBATCH --time 2-00:00:00
+#SBATCH --time 3-00:00:00
 
 python train_plp.py
