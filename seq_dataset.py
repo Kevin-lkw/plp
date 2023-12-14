@@ -39,7 +39,7 @@ class Raw_Data5k_Dataset(Dataset):
         pil_image = Image.fromarray(image.astype('uint8'))
 
         # 调整图像大小
-        resized_image = pil_image.resize(target_size)
+        resized_image = pil_image.resize((target_size[1], target_size[0]))
 
         # 将PIL图像转换回NumPy数组
         resized_np_image = np.array(resized_image)
@@ -157,7 +157,7 @@ class Segment_Hint5k_Dataset(Dataset):
         pil_image = Image.fromarray(image.astype('uint8'))
 
         # 调整图像大小
-        resized_image = pil_image.resize(target_size)
+        resized_image = pil_image.resize((target_size[1], target_size[0]))
 
         # 将PIL图像转换回NumPy数组
         resized_np_image = np.array(resized_image)
@@ -222,7 +222,7 @@ class Segment_Hint5k_Dataset(Dataset):
         hint = seg
 
         # Normalize hint images to [0, 1].
-        hint = hint.astype(np.float32) / hint.max()
+        hint = hint.astype(np.float32) / (hint.max() + 1e-6)
         # Normalize target images to [-1, 1].
         jpg = (jpg.astype(np.float32) / 127.5) - 1.0
 
@@ -255,12 +255,50 @@ class Segment_Hint5k_Dataset(Dataset):
         }
     
     # check dataset img
-    def show_img(self, idx):
-        data = self.__getitem__(idx)
+    def show_img(self, idx, img_path=None):
+        data_path = f'./dataset/raw_data5k/{idx}'
+        if img_path is None:
+            img_path = f'validation_utils/{idx}.png'
+        with open(data_path, 'rb') as f:
+            data = pkl.load(f) # dict, with 'captions', 'image' and 'mask'
+        img = data['image']
+
+        # save image
+
+        # img = img.astype('uint8')
+        # img = Image.fromarray(img)
+        # img.save(img_path)
+        # print(f'image {idx} saved to {img_path}')
+        # exit()
+
+        img = self.resize_image(img)
+
+        # img = img.astype('uint8')
+        # img = Image.fromarray(img)
+        # img.save(img_path)
+        # print(f'image {idx} saved to {img_path}')
+        # exit()
         
-        ## TODO
+        # 获取原始图片的宽度和高度
+        height, width, _ = img.shape
+
+        # 计算可截取的最大起始位置
+        max_left = width - 512
+        max_top = height - 512
+
+        # 生成随机的截取起始位置
+        left = random.randint(0, max_left)
+        top = random.randint(0, max_top)
+
+        img = self.crop_img(img, left, top)
+
+        img = Image.fromarray(img)
+        img.save(img_path)
+        print(f'image {idx} saved to {img_path}')
+
 
 
 if __name__ == "__main__":
     dataset = Segment_Hint5k_Dataset()
-    dataset[0]
+    # dataset[0]
+    dataset.show_img(163746)
