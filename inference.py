@@ -1,66 +1,139 @@
+from share import *
+import config
+import einops
 import numpy as np
 import torch
-from share import *
+import random
 
-import pytorch_lightning as pl
-from torch.utils.data import DataLoader
-from seq_dataset import Raw_Data5k_Dataset
-from cldm.logger import ImageLogger
+from pytorch_lightning import seed_everything
 from cldm.model import create_model, load_state_dict
-
+from cldm.ddim_hacked import DDIMSampler
+#from ldm.models.diffusion.ddim import DDIMSampler
+from PIL import Image
 
 # Configs
 resume_path = './models/plp_ini.ckpt'
-#batch_size = 4
-#logger_freq = 300
-#learning_rate = 1e-5
-#sd_locked = True
-#only_mid_control = False
 
-print('qwq')
-
-# First use cpu to load models. Pytorch Lightning will automatically move it to GPUs.
 model = create_model('./models/plp_model.yaml').cpu()
 model.load_state_dict(load_state_dict(resume_path, location='cpu'))
-
-def get_batch(seq_t, jpg, mask, caption):
-    txt_t = np.random.randint(0, len(caption))
-    hint = mask * jpg
-
-    return {
-            'seq_t': seq_t,
-            'jpg': jpg, #from last step
-            'txt': caption[txt_t],
-            'hint': hint,
-            'mask': mask, #from last step
-        }
+print("here")
+model = model.cuda()
+print("here0")
+ddim_sampler = DDIMSampler(model)
+print("here1")
 
 
-def inference(img_path, prompt, sample_timestep, N=1, n_row=2, sample=False, ddim_steps=50, ddim_eta=0.0, return_keys=None,
-                quantize_denoised=True, inpaint=True, plot_denoise_rows=False, plot_progressive_rows=True,
-                plot_diffusion_rows=False, unconditional_guidance_scale=9.0, unconditional_guidance_label=None,
-                use_ema_scope=True,
-                **kwargs):
-    use_ddim = ddim_steps is not None
-    
+def create_seg(seq_t : int, mask_array : np.ndarray)->np.ndarray:
+        '''
+        mask_array is gt_mask[0:seq_t]
+        '''
+
+        mask_array = mask_array.astype(np.int32)
+        h, w = mask_array.shape[1], mask_array.shape[2]
+
+        seg = np.zeros((h, w))
+        prev_mask = seg
+        for i in range(seq_t):
+            curr_mask = mask_array[i] - prev_mask
+            prev_mask = mask_array[i]
+            seg[curr_mask==1] = i+1
+        
+        return seg # (h, w)
+
+
+def inference(paint_timestep, prompt, a_prompt, n_prompt, seed, batch_size=4, 
+              ddim_steps=50, guess_mode=False, strength=1.0, scale=9.0, eta=0.0):
     img_shape = [512, 512, 3]
-    mask_shape = [512, 512, 1]
-    img = np.zeros(img_shape)
-    mask = np.ones(mask_shape)
+    mask_shape = [1, 512, 512,]
+    mask = np.zeros(mask_shape).astype(np.float32)
+    results = []
+    print("here2")
+    with torch.no_grad():
+        H, W, C = img_shape
 
-    z, c = model.get_input(get_batch(0, img, mask, prompt), bs=N)
-    c_cat, c, seq_t, mask = c["c_concat"][0][:N], c["c_crossattn"][0][:N], c['seq_t'][:N], c['mask'][:N]
-    N = min(z.shape[0], N)
-    n_row = min(z.shape[0], n_row)
-    #log["reconstruction"] = model.decode_first_stage(z)
-    #log["control"] = c_cat * 2.0 - 1.0
-    #log["conditioning"] = log_txt_as_img((512, 512), batch[self.cond_stage_key], size=16)
+        if seed == -1:
+            seed = random.randint(0, 65535)
+        seed_everything(seed)
+        
+        for seq_t in range(paint_timestep):
+            seg = create_seg(seq_t, mask)
+            seg = np.tile(seg, (3, 1, 1)).transpose(1,2,0) # 512x512x3
+            mask = mask.astype(np.float32)
+            # Normalize hint images to [0, 1].
+            seg = seg.astype(np.float32) / (seg.max() + 1e-6)
+            
+            #hint = torch.stack([control for _ in range(num_samples)], dim=0).to("cuda")
+            #print(hint.shape)
+            #hint = einops.rearrange(hint, 'b h w c -> b c h w')
+            #hint = hint.to(memory_format=torch.contiguous_format).float()
+            
+            hint = torch.from_numpy(seg.copy()).cuda()
+            hint = torch.stack([hint for _ in range(batch_size)], dim=0)
+            hint = einops.rearrange(hint, 'b h w c -> b c h w').clone()
+            
+            seq_t = torch.stack([torch.tensor(seq_t) for _ in range(batch_size)], dim=0).cuda()
+            mask_t = torch.from_numpy(mask.copy()).cuda()
+            mask_t = torch.stack([mask_t for _ in range(batch_size)], dim=0)
+            
+            if config.save_memory:
+                model.low_vram_shift(is_diffusing=False)
+            
+            cond = {"c_concat": [hint], 
+                    "c_crossattn": [model.get_learned_conditioning([prompt + ', ' + a_prompt]*batch_size)],
+                    "seq_t": seq_t, 
+                    "mask": mask_t}
+            un_cond = {"c_concat": None if guess_mode else [hint], 
+                   "c_crossattn": [model.get_learned_conditioning([n_prompt]*batch_size)],
+                   "seq_t": seq_t, 
+                   "mask": mask_t}           
+            
+            shape = (4, H // 8, W // 8)
 
-    samples_cfg, _ = model.sample_log(cond={"c_concat": [c_cat], "c_crossattn": [c], "seq_t": seq_t, "mask": mask},
-                                             batch_size=N, ddim=use_ddim,
-                                             ddim_steps=ddim_steps, eta=ddim_eta,
-                                             unconditional_guidance_scale=unconditional_guidance_scale,
-                                             unconditional_conditioning=None,
-                                             )
-    x_samples_cfg = model.decode_first_stage(samples_cfg)
-    #log[f"samples_cfg_scale_{unconditional_guidance_scale:.2f}"] = x_samples_cfg
+            if config.save_memory:
+                model.low_vram_shift(is_diffusing=True)
+
+            # Magic number. IDK why. Perhaps because 0.825**12<0.01 but 0.826**12>0.01
+            model.control_scales = [strength * (0.825 ** float(12 - i)) for i in range(13)] \
+                                    if guess_mode else ([strength] * 13)  
+            
+            samples, intermediates, mask_pred = ddim_sampler.sample(ddim_steps, batch_size,
+                                                         shape, cond, verbose=False, eta=eta,
+                                                         unconditional_guidance_scale=scale,
+                                                         unconditional_conditioning=un_cond, 
+                                                         inference=True)
+
+            if config.save_memory:
+                model.low_vram_shift(is_diffusing=False)
+
+            x_samples = model.decode_first_stage(samples)
+            x_samples = einops.rearrange(x_samples, 'b c h w -> b h w c') * 127.5 + 127.5
+            x_samples = x_samples.cpu().numpy().clip(0, 255).astype(np.uint8)
+
+            #results = [x_samples[i] for i in range(batch_size)]
+            results.append(x_samples[0])
+            print(mask_pred[0][np.newaxis, ...].shape)
+            print(mask.shape)
+            mask = np.concatenate((mask, mask_pred[0][np.newaxis, ...]), axis=0)
+            
+    return results
+
+
+if __name__ == "__main__":
+    paint_timestep = 4
+    prompt = "A couple of people sitting at a table while using smart phones"
+    a_prompt = ""
+    n_prompt = ""
+    seed = 42
+    output_path = 'Inference/'
+    syn_img_seq = inference(paint_timestep, prompt, a_prompt, n_prompt, seed)
+    
+    image_height = syn_img_seq[0].size(0)
+    image_width = syn_img_seq[0].size(1) * len(syn_img_seq)
+    output_image = Image.new("RGB", (image_width, image_height))
+    
+    x_offset = 0
+    for syn_img in syn_img_seq:
+        output_image.paste(syn_img, (x_offset, 0))
+        x_offset += syn_img.size(1)
+        
+    output_image.show()
