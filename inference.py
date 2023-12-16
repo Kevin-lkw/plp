@@ -16,11 +16,8 @@ resume_path = './models/plp_ini.ckpt'
 
 model = create_model('./models/plp_model.yaml').cpu()
 model.load_state_dict(load_state_dict(resume_path, location='cpu'))
-print("here")
 model = model.cuda()
-print("here0")
 ddim_sampler = DDIMSampler(model)
-print("here1")
 
 
 def create_seg(seq_t : int, mask_array : np.ndarray)->np.ndarray:
@@ -47,7 +44,7 @@ def inference(paint_timestep, prompt, a_prompt, n_prompt, seed, batch_size=4,
     mask_shape = [1, 512, 512,]
     mask = np.zeros(mask_shape).astype(np.float32)
     results = []
-    print("here2")
+
     with torch.no_grad():
         H, W, C = img_shape
 
@@ -61,11 +58,6 @@ def inference(paint_timestep, prompt, a_prompt, n_prompt, seed, batch_size=4,
             mask = mask.astype(np.float32)
             # Normalize hint images to [0, 1].
             seg = seg.astype(np.float32) / (seg.max() + 1e-6)
-            
-            #hint = torch.stack([control for _ in range(num_samples)], dim=0).to("cuda")
-            #print(hint.shape)
-            #hint = einops.rearrange(hint, 'b h w c -> b c h w')
-            #hint = hint.to(memory_format=torch.contiguous_format).float()
             
             hint = torch.from_numpy(seg.copy()).cuda()
             hint = torch.stack([hint for _ in range(batch_size)], dim=0)
@@ -108,14 +100,14 @@ def inference(paint_timestep, prompt, a_prompt, n_prompt, seed, batch_size=4,
             x_samples = model.decode_first_stage(samples)
             x_samples = einops.rearrange(x_samples, 'b c h w -> b h w c') * 127.5 + 127.5
             x_samples = x_samples.cpu().numpy().clip(0, 255).astype(np.uint8)
+            
+            mask_pred = mask_pred.cpu().numpy()
 
             #results = [x_samples[i] for i in range(batch_size)]
             results.append(x_samples[0])
-            print(mask_pred[0][np.newaxis, ...].shape)
-            print(mask.shape)
             mask = np.concatenate((mask, mask_pred[0][np.newaxis, ...]), axis=0)
             
-    return results
+    return results, mask
 
 
 if __name__ == "__main__":
@@ -123,17 +115,18 @@ if __name__ == "__main__":
     prompt = "A couple of people sitting at a table while using smart phones"
     a_prompt = ""
     n_prompt = ""
-    seed = 42
+    seed = 43
     output_path = 'Inference/'
-    syn_img_seq = inference(paint_timestep, prompt, a_prompt, n_prompt, seed)
+    syn_img_seq, syn_img_mask = inference(paint_timestep, prompt, a_prompt, n_prompt, seed)
     
-    image_height = syn_img_seq[0].size(0)
-    image_width = syn_img_seq[0].size(1) * len(syn_img_seq)
+    image_height = syn_img_seq[0].shape[0]
+    image_width = syn_img_seq[0].shape[1] * len(syn_img_seq)
     output_image = Image.new("RGB", (image_width, image_height))
     
     x_offset = 0
-    for syn_img in syn_img_seq:
-        output_image.paste(syn_img, (x_offset, 0))
-        x_offset += syn_img.size(1)
+    for i, syn_img in enumerate(syn_img_seq):
+        image = Image.fromarray(syn_img.astype('uint8'))
+        output_image.paste(image, (x_offset, 0, x_offset + syn_img.shape[1], syn_img.shape[0]))
+        x_offset += syn_img.shape[0]
         
-    output_image.show()
+    output_image.save(output_path +'out.png')
