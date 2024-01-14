@@ -126,12 +126,11 @@ class PLPModel(ControlLDM):
         
 
         # add mask query loss
-        # loss_mask = self.get_loss(mask_pred, mask_t, mean=False).mean([1, 2])
 
-        # loss_mask = torch.nn.BCELoss(reduction='none')(mask_pred, mask_t).mean([1, 2])
-        # loss_mask = (self.loss_mask_weights * loss_mask).mean()
-        # loss_dict.update({f'{prefix}/loss_mask': loss_mask})
-        # loss += loss_mask
+        loss_mask = torch.nn.BCELoss(reduction='none')(mask_pred, mask_t).mean([1, 2])
+        loss_mask = (self.loss_mask_weights * loss_mask).mean()
+        loss_dict.update({f'{prefix}/loss_mask': loss_mask})
+        loss = loss_mask # only apply mask loss
 
 
         loss_dict.update({f'{prefix}/loss': loss})
@@ -206,7 +205,7 @@ class PLPModel(ControlLDM):
             # uc_full = {"c_concat": [uc_cat], "c_crossattn": [uc_cross]}
             uc_full = None
 
-            samples_cfg, _ = self.sample_log(cond={"c_concat": [c_cat], "c_crossattn": [c], "seq_t": seq_t, "mask": mask},
+            samples_cfg, intermediates = self.sample_log(cond={"c_concat": [c_cat], "c_crossattn": [c], "seq_t": seq_t, "mask": mask},
                                              batch_size=N, ddim=use_ddim,
                                              ddim_steps=ddim_steps, eta=ddim_eta,
                                              unconditional_guidance_scale=unconditional_guidance_scale,
@@ -214,5 +213,9 @@ class PLPModel(ControlLDM):
                                              )
             x_samples_cfg = self.decode_first_stage(samples_cfg)
             log[f"samples_cfg_scale_{unconditional_guidance_scale:.2f}"] = x_samples_cfg
+            
+            # add mask_pred and mask_gt
+            log['mask_pred'] = intermediates['mask_pred'][0]
+            log['mask_gt'] = intermediates['mask_gt']
 
         return log
