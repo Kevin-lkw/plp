@@ -43,6 +43,8 @@ def inference(paint_timestep, prompt, a_prompt, n_prompt, seed, batch_size=4,
     img_shape = [512, 512, 3]
     mask_shape = [1, 512, 512,]
     mask = np.zeros(mask_shape).astype(np.float32)
+    threshold = 0.6
+    segement = []
     results = []
 
     with torch.no_grad():
@@ -55,6 +57,7 @@ def inference(paint_timestep, prompt, a_prompt, n_prompt, seed, batch_size=4,
         for seq_t in range(paint_timestep):
             seg = create_seg(seq_t, mask)
             seg = np.tile(seg, (3, 1, 1)).transpose(1,2,0) # 512x512x3
+            segement.append(seg)
             mask = mask.astype(np.float32)
             # Normalize hint images to [0, 1].
             seg = seg.astype(np.float32) / (seg.max() + 1e-6)
@@ -64,8 +67,8 @@ def inference(paint_timestep, prompt, a_prompt, n_prompt, seed, batch_size=4,
             hint = einops.rearrange(hint, 'b h w c -> b c h w').clone()
             
             seq_t = torch.stack([torch.tensor(seq_t) for _ in range(batch_size)], dim=0).cuda()
-            mask_t = torch.from_numpy(mask.copy()).cuda()
-            mask_t = torch.stack([mask_t for _ in range(batch_size)], dim=0)
+            mask_t = torch.from_numpy(mask.copy())
+            mask_t = torch.stack([mask_t for _ in range(batch_size)], dim=0).cuda()
             
             if config.save_memory:
                 model.low_vram_shift(is_diffusing=False)
@@ -101,13 +104,18 @@ def inference(paint_timestep, prompt, a_prompt, n_prompt, seed, batch_size=4,
             x_samples = einops.rearrange(x_samples, 'b c h w -> b h w c') * 127.5 + 127.5
             x_samples = x_samples.cpu().numpy().clip(0, 255).astype(np.uint8)
             
+            # where x > threshold clip to 1, else 0
             mask_pred = mask_pred.cpu().numpy()
+            mask_pred = np.where(mask_pred - np.floor(mask_pred) >= threshold, \
+                                np.ceil(mask_pred), np.floor(mask_pred))
 
             #results = [x_samples[i] for i in range(batch_size)]
             results.append(x_samples[0])
             mask = np.concatenate((mask, mask_pred[0][np.newaxis, ...]), axis=0)
-            
-    return results, mask
+    
+    mask = mask.astype(np.int32)
+    
+    return results, mask, segement
 
 
 if __name__ == "__main__":
@@ -117,16 +125,22 @@ if __name__ == "__main__":
     n_prompt = ""
     seed = 43
     output_path = 'Inference/'
-    syn_img_seq, syn_img_mask = inference(paint_timestep, prompt, a_prompt, n_prompt, seed)
+    syn_img_seq, syn_img_mask, syn_img_seg = inference(paint_timestep, prompt,
+                                                        a_prompt, n_prompt, seed)
     
-    image_height = syn_img_seq[0].shape[0]
+    image_height = syn_img_seq[0].shape[0] * 2
     image_width = syn_img_seq[0].shape[1] * len(syn_img_seq)
     output_image = Image.new("RGB", (image_width, image_height))
     
     x_offset = 0
+    y_offset = syn_img_seq[0].shape[0]
     for i, syn_img in enumerate(syn_img_seq):
+        syn_imgwith_mask = syn_img * syn_img_mask[i+1][..., np.newaxis]
         image = Image.fromarray(syn_img.astype('uint8'))
+        image_mask = Image.fromarray(syn_imgwith_mask.astype('uint8'))
         output_image.paste(image, (x_offset, 0, x_offset + syn_img.shape[1], syn_img.shape[0]))
-        x_offset += syn_img.shape[0]
+        output_image.paste(image_mask, (x_offset, y_offset, \
+                                        x_offset + syn_img.shape[1], y_offset + syn_img.shape[0]))
+        x_offset += syn_img.shape[1]
         
     output_image.save(output_path +'out.png')
