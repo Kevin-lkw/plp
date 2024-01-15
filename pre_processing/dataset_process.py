@@ -14,7 +14,7 @@ python pre_processing/dataset_process.py
 
 import os
 import pickle as pkl
-import tqdm
+from tqdm.auto import tqdm
 import pdb
 
 
@@ -34,7 +34,7 @@ def preprocess_raw_data5k():
     # pdb.set_trace()
 
     # save each item to save_dir
-    for k in raw_data.keys():
+    for k in tqdm(raw_data.keys()):
         assert isinstance(k, int)
         save_path = os.path.join(save_dir, str(k))
 

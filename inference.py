@@ -11,14 +11,8 @@ from cldm.ddim_hacked import DDIMSampler
 #from ldm.models.diffusion.ddim import DDIMSampler
 from PIL import Image
 
-# Configs
-resume_path = './models/plp_ini.ckpt'
-
-model = create_model('./models/plp_model.yaml').cpu()
-model.load_state_dict(load_state_dict(resume_path, location='cpu'))
-model = model.cuda()
-ddim_sampler = DDIMSampler(model)
-
+mask_shape = [1, 512, 512,]
+inference_mask = np.zeros(mask_shape).astype(np.float32)
 
 def create_seg(seq_t : int, mask_array : np.ndarray)->np.ndarray:
         '''
@@ -38,11 +32,67 @@ def create_seg(seq_t : int, mask_array : np.ndarray)->np.ndarray:
         return seg # (h, w)
 
 
-def inference(paint_timestep, prompt, a_prompt, n_prompt, seed, batch_size=4, 
+def inference_step(model, prompt, batch_size, seq_t, inference_mask, ddim_steps=50):
+    model = model.cuda()
+    ddim_sampler = DDIMSampler(model)
+    a_prompt = '' 
+    n_prompt = ''
+    
+    seg = create_seg(seq_t, inference_mask)
+    seg = np.tile(seg, (3, 1, 1)).transpose(1,2,0) # 512x512x3
+    inference_mask = inference_mask.astype(np.float32)
+    # Normalize hint images to [0, 1].
+    seg = seg.astype(np.float32) / (seg.max() + 1e-6)
+            
+    hint = torch.from_numpy(seg.copy()).cuda()
+    hint = torch.stack([hint for _ in range(batch_size)], dim=0)
+    hint = einops.rearrange(hint, 'b h w c -> b c h w').clone()
+            
+    seq_t = torch.stack([torch.tensor(seq_t) for _ in range(batch_size)], dim=0).cuda()
+    mask_t = torch.from_numpy(inference_mask.copy())
+    mask_t = torch.stack([mask_t for _ in range(batch_size)], dim=0).cuda()
+            
+    cond = {"c_concat": [hint], 
+            "c_crossattn": [model.get_learned_conditioning([prompt + ', ' + a_prompt]*batch_size)],
+            "seq_t": seq_t, 
+            "mask": mask_t}
+    un_cond = {"c_concat": [hint], 
+           "c_crossattn": [model.get_learned_conditioning([n_prompt]*batch_size)],
+           "seq_t": seq_t, 
+           "mask": mask_t}           
+            
+    shape = (4, 512 // 8, 512 // 8)
+    strength = 1.0
+    threshold = 0.6
+
+    # Magic number. IDK why. Perhaps because 0.825**12<0.01 but 0.826**12>0.01
+    model.control_scales = ([strength] * 13)  
+            
+    samples, intermediates, mask_pred = ddim_sampler.sample(ddim_steps, batch_size,
+                                                 shape, cond, verbose=False, eta=0.0,
+                                                 unconditional_guidance_scale=9.0,
+                                                 unconditional_conditioning=un_cond, 
+                                                 inference=True)
+
+    x_samples = model.decode_first_stage(samples)
+    x_samples = einops.rearrange(x_samples, 'b c h w -> b h w c') * 127.5 + 127.5
+    x_samples = x_samples.cpu().numpy().clip(0, 255).astype(np.uint8)
+            
+    # where x > threshold clip to 1, else 0
+    mask_pred = mask_pred.cpu().numpy()
+    mask_pred = np.where(mask_pred - np.floor(mask_pred) >= threshold, \
+                        np.ceil(mask_pred), np.floor(mask_pred))
+
+    #results = [x_samples[i] for i in range(batch_size)]
+    inference_mask = np.concatenate((inference_mask, mask_pred[0][np.newaxis, ...]), axis=0)
+    return mask_pred # expected 512*512
+
+def inference(paint_timestep, model, prompt, a_prompt, n_prompt, seed, batch_size=4, 
               ddim_steps=50, guess_mode=False, strength=1.0, scale=9.0, eta=0.0):
+
+    model = model.cuda()
+    ddim_sampler = DDIMSampler(model)
     img_shape = [512, 512, 3]
-    mask_shape = [1, 512, 512,]
-    mask = np.zeros(mask_shape).astype(np.float32)
     threshold = 0.6
     segement = []
     results = []
