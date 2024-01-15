@@ -1,3 +1,6 @@
 [submodule "glide-text2im"]
 	path = glide-text2im
 	url = https://github.com/openai/glide-text2im.git
+[submodule "fid"]
+	path = fid
+	url = https://github.com/mseitzer/pytorch-fid.git
