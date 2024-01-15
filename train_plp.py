@@ -1,4 +1,5 @@
 from share import *
+import pdb
 
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader
@@ -9,7 +10,7 @@ from cldm.model import create_model, load_state_dict
 
 # Configs
 resume_path = './models/plp_ini.ckpt'
-batch_size = 4
+batch_size = 2
 logger_freq = 300
 learning_rate = 1e-5
 sd_locked = True
@@ -20,7 +21,10 @@ print('qwq')
 
 # First use cpu to load models. Pytorch Lightning will automatically move it to GPUs.
 model = create_model('./models/plp_model.yaml').cpu()
+pdb.set_trace()
+resume_path = 'lightning_logs/version_24881/checkpoints/epoch=20-step=6573.ckpt'
 model.load_state_dict(load_state_dict(resume_path, location='cpu'))
+pdb.set_trace()
 model.learning_rate = learning_rate
 model.sd_locked = sd_locked
 model.only_mid_control = only_mid_control
