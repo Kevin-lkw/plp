@@ -12,7 +12,6 @@ from cldm.ddim_hacked import DDIMSampler
 from PIL import Image
 
 mask_shape = [1, 512, 512,]
-inference_mask = np.zeros(mask_shape).astype(np.float32)
 
 def create_seg(seq_t : int, mask_array : np.ndarray)->np.ndarray:
         '''
@@ -20,6 +19,7 @@ def create_seg(seq_t : int, mask_array : np.ndarray)->np.ndarray:
         '''
 
         mask_array = mask_array.astype(np.int32)
+        print('mask_array: ', mask_array.shape)
         h, w = mask_array.shape[1], mask_array.shape[2]
 
         seg = np.zeros((h, w))
@@ -85,7 +85,8 @@ def inference_step(model, prompt, batch_size, seq_t, inference_mask, ddim_steps=
 
     #results = [x_samples[i] for i in range(batch_size)]
     inference_mask = np.concatenate((inference_mask, mask_pred[0][np.newaxis, ...]), axis=0)
-    return mask_pred # expected 512*512
+    print('infer_mask: ', inference_mask.shape)
+    return mask_pred, inference_mask # expected 512*512
 
 def inference(paint_timestep, model, prompt, a_prompt, n_prompt, seed, batch_size=4, 
               ddim_steps=50, guess_mode=False, strength=1.0, scale=9.0, eta=0.0):

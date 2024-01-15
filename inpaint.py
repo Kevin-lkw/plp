@@ -1,15 +1,21 @@
 from typing import Tuple
 
 from PIL import Image
+from tqdm.auto import tqdm
 import os, sys
 import numpy as np
 import torch as th
 import torch.nn.functional as F
+import torchvision.transforms.functional as TF
+from torch.utils.data import DataLoader
 from cldm.model import create_model, load_state_dict
 import pdb
 # from torchvision.utils import save_images
 
-from inference import inference, inference_mask, inference_step
+from inference import inference, inference_step
+
+from seq_dataset import Raw_Data5k_Dataset, Segment_Hint5k_Dataset
+from datetime import datetime
 
 sys.path.append('glide-text2im')
 
@@ -22,22 +28,21 @@ from glide_text2im.model_creation import (
 
 has_cuda = th.cuda.is_available()
 device = th.device('cpu' if not has_cuda else 'cuda')
-save_path = 'output/'
-if not os.path.exists(save_path):
-    os.makedirs(save_path)
-    
-#     197
-# (Pdb) len(mask_model.state_dict().keys())
-# 1638
-# (Pdb) 
+
+current_time = datetime.now()
+formatted_time = current_time.strftime("%H:%M:%S")
+save_dir = f'output/{formatted_time}'
+if not os.path.exists(save_dir):
+    os.makedirs(save_dir)
+
+save_path = None
+
 
 
 # resume_path = './models/plp_ini.ckpt'
-resume_path = 'lightning_logs/epoch=20-step=6573.ckpt'
+resume_path = 'lightning_logs/version_24881/checkpoints/epoch=20-step=6573.ckpt'
 mask_model = create_model('./models/plp_model.yaml').cpu()
-pdb.set_trace()
 mask_model.load_state_dict(load_state_dict(resume_path, location='cpu'))
-pdb.set_trace()
 
 threshold = 0.5
 
@@ -84,9 +89,36 @@ def main():
     model_up.to(device)
     model_up.load_state_dict(load_checkpoint('upsample-inpaint', device))
     print('total upsampler parameters', sum(x.numel() for x in model_up.parameters()))
+    
+    # load dataset
+    dataset = Segment_Hint5k_Dataset()
+    dataloader = DataLoader(dataset, num_workers=0, batch_size=1, shuffle=True)
+
+    for idx, batch in tqdm(enumerate(dataloader)):
+        jpg, txt = batch['jpg'], batch['txt']
+        # denormalize jpg
+        jpg = (jpg + 1) * 127.5
+        jpg = jpg / 255.0
+        # pdb.set_trace()
+        image_path = dataset.data_path_list[idx]
+        global save_path
+        save_path = os.path.join(save_dir, image_path)
+        os.makedirs(save_path, exist_ok=True)
+        generate_single_image(model=model, model_up=model_up, prompt=txt[0], image_gt=jpg, 
+                            options=options, options_up=options_up, diffusion=diffusion, diffusion_up=diffusion_up)
+
+
+def generate_single_image(model, model_up, prompt, image_gt, options, options_up, diffusion, diffusion_up):
+
+    # save img_gt
+    image_gt_pil = TF.to_pil_image(image_gt.squeeze(0).permute(2, 0, 1))
+    image_gt_pil.save(f'{save_path}/image_gt_512.png')
+
+    # save text
+    with open(f'{save_path}/prompt.txt', 'w') as f:
+        f.write(prompt)
 
     # Sampling parameters
-    prompt = "a cat in a field"
     batch_size = 1
     guidance_scale = 5.0
 
@@ -95,8 +127,8 @@ def main():
     upsample_temp = 0.997
 
     # Source image we are inpainting
-    source_image_256 = read_image('glide-text2im/notebooks/grass.png', size=256)
-    source_image_64 = read_image('glide-text2im/notebooks/grass.png', size=64)
+    source_image_256 = th.zeros((1, 3, 256, 256))
+    source_image_64 = th.zeros((1, 3, 64, 64))
 
     # The mask should always be a boolean 64x64 mask, and then we
     # can upsample it for the second stage.
@@ -105,7 +137,7 @@ def main():
     source_mask_256 = F.interpolate(source_mask_64, (256, 256), mode='nearest')
 
     # Visualize the image we are inpainting
-    save_images(source_image_256 * source_mask_256, save_path+'img_mask.png')
+    save_images(source_image_256 * source_mask_256, f'{save_path}/img_mask.png')
 
     ##############################
     # Sample from the base model #
@@ -123,8 +155,10 @@ def main():
         [], options['text_ctx']
     )
 
+    inference_mask = np.zeros([1, 512, 512]).astype(np.float32)
+
     # Pack the tokens together into model kwargs.
-    for t in range(10):
+    for t in range(5):
         model_kwargs = dict(
             tokens=th.tensor(
                 [tokens] * batch_size + [uncond_tokens] * batch_size, device=device
@@ -137,7 +171,7 @@ def main():
     
             # Masked inpainting image
             # change here to allow auto regressive
-            inpaint_image=(source_image_64 * source_mask_64).repeat(full_batch_size, 1, 1, 1).to(device),
+            inpaint_image=(source_image_64 * source_mask_64).repeat(full_batch_size, 1, 1, 1).to(device), # (2, 3, 64, 64)
             inpaint_mask=source_mask_64.repeat(full_batch_size, 1, 1, 1).to(device),
         )
     
@@ -175,7 +209,7 @@ def main():
         model.del_cache()
     
         # Show the output
-        save_images(samples, save_path+f'out_64_00{t}.png')
+        save_images(samples, f'{save_path}/out_64_00{t}.png')
     
         ##############################
         # Upsample the 64x64 samples #
@@ -224,31 +258,39 @@ def main():
         
         ###
         # predict new mask 
-        mask_pred = inference_step(model=mask_model,
+        mask_pred, inference_mask = inference_step(model=mask_model,
                               prompt=prompt, batch_size=batch_size, seq_t=t,
                               inference_mask=inference_mask
                               )
+
+        mask_pred = th.from_numpy(mask_pred)
         # new_img = up_samples
-        pdb.set_trace()
         
-        assert mask_pred.shape == (1, 512, 512)
-        mask_pred = mask_pred[0]
+        # assert mask_pred.shape == (1, 512, 512)
         
         # update mask and image
-        source_mask_64 = mask_pred.reshape(64, 64, 8, 8).mean(axis=(2, 3))
-        source_mask_256 = mask_pred.reshape(256, 256, 2, 2).mean(axis=(2, 3))
+        source_mask_64 = mask_pred.unsqueeze(0)
+        source_mask_256 = mask_pred.unsqueeze(0)
+
+        source_mask_64 = F.interpolate(source_mask_64, size=(64, 64), mode='bilinear', align_corners=False).to(device)
+        source_mask_256 = F.interpolate(source_mask_256, size=(256, 256), mode='bilinear', align_corners=False).to(device)
         
         source_mask_64[source_mask_64>threshold] = 1
         source_mask_64[source_mask_64<=threshold] = 0
         source_mask_256[source_mask_256>threshold] = 1
         source_mask_256[source_mask_256<=threshold] = 0
         
-        source_image_256 = up_samples
-        assert source_image_256.shape == (256, 256, 3)
-        source_image_64 = source_image_256.reshape(64, 64, 4, 4, 3).mean(axis=(2, 3))
+        source_image_256 = up_samples.to(device)
+        assert source_image_256.shape == (1, 3, 256, 256)
+        source_image_64 = F.interpolate(source_image_256, size=(64, 64), mode='bilinear', align_corners=False).to(device)
     
         # Show the output
-        save_images(up_samples, save_path+f'out_256_00{t}.png')
+        save_images(up_samples, f'{save_path}/out_256_00{t}.png')
+        
+        mask_pil = TF.to_pil_image(source_mask_256.squeeze(0))
+        mask_pil.save(f'{save_path}/mask_256_00{t}.png')
+        
+        
 
 if __name__ == '__main__':
     main()
