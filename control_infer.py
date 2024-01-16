@@ -101,10 +101,12 @@ if __name__ == "__main__":
 
     # load dataset
     dataset = Segment_Hint5k_Dataset()
-    dataloader = DataLoader(dataset, num_workers=0, batch_size=1, shuffle=False)
+    # dataloader = DataLoader(dataset, num_workers=0, batch_size=1, shuffle=False)
 
-    for idx, batch in tqdm(enumerate(dataloader)):
-        jpg, txt = batch['jpg'], batch['txt']
+    for idx in tqdm(range(len(dataset))):
+        batch = dataset.__getitem__(idx)
+        jpg, txt = batch['jpg'][np.newaxis, ...], batch['txt']
+        jpg = th.from_numpy(jpg)
         # denormalize jpg
         jpg = (jpg + 1) * 127.5
         jpg = jpg / 255.0
@@ -113,7 +115,7 @@ if __name__ == "__main__":
         save_path = os.path.join(save_dir, image_path)
         os.makedirs(save_path, exist_ok=True)
         generate_single_image(model=mask_model, 
-                            prompt=txt[0], 
+                            prompt=txt, 
                             image_gt=jpg, 
                             save_path=save_path, 
                             )
