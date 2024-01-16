@@ -20,6 +20,7 @@ class Raw_Data5k_Dataset(Dataset):
     ):
         self.data_dir = data_dir
         self.data_path_list = os.listdir(data_dir)
+        self.data_path_list = sorted(self.data_path_list)
         
 
     def __len__(self):
@@ -138,6 +139,7 @@ class Segment_Hint5k_Dataset(Dataset):
     ):
         self.data_dir = data_dir
         self.data_path_list = os.listdir(data_dir)
+        self.data_path_list = sorted(self.data_path_list)
         
 
     def __len__(self):

@@ -92,7 +92,7 @@ def main():
     
     # load dataset
     dataset = Segment_Hint5k_Dataset()
-    dataloader = DataLoader(dataset, num_workers=0, batch_size=1, shuffle=True)
+    dataloader = DataLoader(dataset, num_workers=0, batch_size=1, shuffle=False)
 
     for idx, batch in tqdm(enumerate(dataloader)):
         jpg, txt = batch['jpg'], batch['txt']
