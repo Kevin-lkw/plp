@@ -40,7 +40,8 @@ save_path = None
 
 
 # resume_path = './models/plp_ini.ckpt'
-resume_path = 'lightning_logs/version_24881/checkpoints/epoch=20-step=6573.ckpt'
+# resume_path = 'lightning_logs/version_24881/checkpoints/epoch=20-step=6573.ckpt' # seg model
+resume_path = 'lightning_logs/version_24940/checkpoints/epoch=9-step=6250.ckpt' # recon&seg model
 mask_model = create_model('./models/plp_model.yaml').cpu()
 mask_model.load_state_dict(load_state_dict(resume_path, location='cpu'))
 
