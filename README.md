@@ -14,7 +14,7 @@
 
 The training logs including inferenced images and loss curves should be in `./image_log` and `./lightning_logs`.
 # Quantitative Evaluation
-See [quantitative_evaluation/README.md](quantitative_evaluation/README.md) for more details.
+See [quantitative_evaluation_metric/README.md](quantitative_evaluation_metric/README.md) for more details.
 
 # TODO
 
