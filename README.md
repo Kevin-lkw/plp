@@ -4,7 +4,7 @@
 
 ## ControlNet
 
-We use python=3.8, pytorch=2.1.0 and pytorch-lightning=1.9.0
+We use python=3.8, pytorch=2.1.0 and pytorch-lightning=1.9.0 in this project.
 
 Please install those packages first, then install the rest packages in `environment.yaml`.
 

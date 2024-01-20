@@ -29,19 +29,24 @@ from glide_text2im.model_creation import (
 has_cuda = th.cuda.is_available()
 device = th.device('cpu' if not has_cuda else 'cuda')
 
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument("--output_path", type=str, default='output_glide')
+parser.add_argument("--model_path", type=str, required=True)
+args = parser.parse_args()
+print(args)
+
+
 current_time = datetime.now()
 formatted_time = current_time.strftime("%H:%M:%S")
-save_dir = f'output/{formatted_time}'
+save_dir = f'{args.output_path}/{formatted_time}'
 if not os.path.exists(save_dir):
     os.makedirs(save_dir)
 
 save_path = None
 
 
-
-# resume_path = './models/plp_ini.ckpt'
-# resume_path = 'lightning_logs/version_24881/checkpoints/epoch=20-step=6573.ckpt' # seg model
-resume_path = 'lightning_logs/version_24940/checkpoints/epoch=9-step=6250.ckpt' # recon&seg model
+resume_path = args.model_path
 mask_model = create_model('./models/plp_model.yaml').cpu()
 mask_model.load_state_dict(load_state_dict(resume_path, location='cpu'))
 

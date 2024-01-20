@@ -77,24 +77,22 @@ def generate_single_image(model,
 
 if __name__ == "__main__":
 
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--output_path", type=str, default='output_controlnet')
+    parser.add_argument("--model_path", type=str, required=True)
+    args = parser.parse_args()
+    print(args)
+
     current_time = datetime.now()
     formatted_time = current_time.strftime(r"%d_%H:%M")
-    save_dir = f'output_control/{formatted_time}'
+    save_dir = f'{args.output_path}/{formatted_time}'
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
     save_path = None
 
-
-    # # load image generater
-    # img_model_path = 'lightning_logs/version_22032_seg/checkpoints/epoch=123-step=155000.ckpt'
-    # model = create_model('./models/plp_model.yaml').cpu()
-    # model.load_state_dict(load_state_dict(img_model_path), location='cpu'))
-
-    # load mask predicter
-    # resume_path = './models/plp_ini.ckpt'
-    # resume_path = 'lightning_logs/version_24881/checkpoints/epoch=20-step=6573.ckpt' # seg model
-    resume_path = 'lightning_logs/version_24940/checkpoints/epoch=9-step=6250.ckpt' # recon&seg model
+    resume_path = args.model_path
     mask_model = create_model('./models/plp_model.yaml').cpu()
     mask_model.load_state_dict(load_state_dict(resume_path, location='cpu'))
 
