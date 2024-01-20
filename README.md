@@ -10,6 +10,19 @@ Please install those packages first, then install the rest packages in `environm
 
 You can also refer to the [installation guidance](https://github.com/lllyasviel/ControlNet) of official ControlNet repo to set up the environment.
 
+## GLIDE
+
+To clone glide repo, run
+```bash
+git submodule init && git submodule update
+```
+After this step, you can find `glide-text2im/` directory under base directory.
+
+And we expect you to install its requirements as well, just run
+```bash
+cd glide-text2im && pip install -e .
+```
+
 # Inference with PLP framework
 
 To inference using PLP+ControlNet, run
