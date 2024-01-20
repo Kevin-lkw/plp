@@ -13,6 +13,8 @@
 5、Run `python train_plp.py` to start training.
 
 The training logs including inferenced images and loss curves should be in `./image_log` and `./lightning_logs`.
+# Quantitative Evaluation
+See [quantitative_evaluation/README.md](quantitative_evaluation/README.md) for more details.
 
 # TODO
 

@@ -4,3 +4,9 @@
 [submodule "fid"]
 	path = fid
 	url = https://github.com/mseitzer/pytorch-fid.git
+[submodule "quantitative_evaluation/clip_score"]
+	path = quantitative_evaluation/clip_score
+	url = https://github.com/Taited/clip-score.git
+[submodule "quantitative_evaluation/inception_score"]
+	path = quantitative_evaluation/inception_score
+	url = https://github.com/sbarratt/inception-score-pytorch.git
